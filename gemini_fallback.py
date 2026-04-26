@@ -1,7 +1,9 @@
 """
 Gemini Fallback - Dùng API nếu có, không thì dùng Web
+ĐÃ CẬP NHẬT: Sử dụng google-genai SDK mới (không còn FutureWarning)
 """
-import google.generativeai as genai
+# Dùng SDK mới thay vì google.generativeai cũ
+from google import genai
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -10,12 +12,19 @@ import time
 import re
 
 def translate_with_api(text, target_language, api_key):
-    """Dùng Gemini API để dịch"""
+    """Dùng Gemini API (SDK mới) để dịch"""
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Khởi tạo client với API key (cách dùng mới)
+        client = genai.Client(api_key=api_key)
+        
+        # Tạo prompt
         prompt = f"Dịch đoạn văn sau sang {target_language}. Chỉ trả về bản dịch, không giải thích:\n\n{text}"
-        response = model.generate_content(prompt)
+        
+        # Gọi API với model mới
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",  # model mới, nhanh và miễn phí
+            contents=prompt
+        )
         return {"success": True, "result": response.text, "method": "API"}
     except Exception as e:
         return {"success": False, "error": str(e), "method": "API"}
@@ -79,7 +88,7 @@ def smart_translate(text, target_language, api_key=None):
     """
     # Thử API nếu có key
     if api_key and api_key.strip():
-        print(f"📡 Đang dùng Gemini API...")
+        print(f"📡 Đang dùng Gemini API (SDK mới)...")
         result = translate_with_api(text, target_language, api_key)
         if result["success"]:
             print(f"✅ API thành công!")
