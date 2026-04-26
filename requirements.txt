@@ -8,3 +8,4 @@ ffmpeg-python
 python-dotenv
 flask-socketio
 simple-websocket
+openai-whisper
