@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Dubbing Studio - Thuyết minh phim bằng AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <style>
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #0f0;
+            font-family: monospace;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            border-bottom: 1px solid #333;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <h1 class="text-4xl font-bold text-center mb-2">🎬 Video Dubbing Studio</h1>
+        <p class="text-center text-gray-400 mb-8">Thuyết minh phim sang bất kỳ ngôn ngữ nào bằng Gemini AI</p>
+        
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <!-- API Key -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Gemini API Key (tùy chọn)</label>
+                <input type="password" id="apiKey" class="w-full px-3 py-2 bg-gray-700 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500" placeholder="Để trống nếu không có API key (sẽ dùng web mode)">
+                <p class="text-xs text-gray-400 mt-1">💡 Nếu có API key: nhanh hơn, ổn định hơn. Không có: tự động dùng web gemini.google.com</p>
+            </div>
+            
+            <!-- Ngôn ngữ -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Ngôn ngữ thuyết minh</label>
+                <select id="language" class="w-full px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
+                    <option value="Vietnamese">Tiếng Việt</option>
+                    <option value="English">Tiếng Anh</option>
+                    <option value="Chinese">Tiếng Trung</option>
+                    <option value="Japanese">Tiếng Nhật</option>
+                    <option value="Korean">Tiếng Hàn</option>
+                    <option value="French">Tiếng Pháp</option>
+                    <option value="German">Tiếng Đức</option>
+                    <option value="Spanish">Tiếng Tây Ban Nha</option>
+                </select>
+            </div>
+            
+            <!-- Upload video -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Tải video lên</label>
+                <input type="file" id="videoFile" accept="video/*" class="w-full px-3 py-2 bg-gray-700 rounded-lg border border-gray-600">
+            </div>
+            
+            <!-- Hoặc YouTube link -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2">Hoặc dán link YouTube</label>
+                <input type="text" id="youtubeUrl" class="w-full px-3 py-2 bg-gray-700 rounded-lg border border-gray-600" placeholder="https://www.youtube.com/watch?v=...">
+            </div>
+            
+            <!-- Nút xử lý -->
+            <div class="flex gap-4">
+                <button onclick="processUpload()" class="flex-1 bg-blue-600 hover:bg-blue-700 py-2 rounded-lg font-semibold transition">🚀 Xử lý video tải lên</button>
+                <button onclick="processYoutube()" class="flex-1 bg-green-600 hover:bg-green-700 py-2 rounded-lg font-semibold transition">📺 Xử lý YouTube link</button>
+            </div>
+        </div>
+        
+        <!-- Log realtime -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-3">📋 Tiến trình xử lý</h2>
+            <div id="logContainer" class="log-container">
+                <div class="log-entry">🟢 Sẵn sàng. Hãy tải video hoặc dán link YouTube...</div>
+            </div>
+        </div>
+        
+        <!-- Kết quả -->
+        <div id="resultContainer" class="bg-gray-800 rounded-lg p-6 hidden">
+            <h2 class="text-xl font-semibold mb-3">✅ Kết quả</h2>
+            <video id="resultVideo" controls class="w-full rounded-lg mb-3"></video>
+            <a id="downloadLink" class="inline-block bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-semibold transition">⬇️ Tải video về máy</a>
+        </div>
+    </div>
+    
+    <script>
+        const socket = io();
+        let currentTaskId = null;
+        
+        socket.on('log', (data) => {
+            const logContainer = document.getElementById('logContainer');
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${data.message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        });
+        
+        async function processUpload() {
+            const videoFile = document.getElementById('videoFile').files[0];
+            if (!videoFile) {
+                alert('Vui lòng chọn video');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('video', videoFile);
+            formData.append('language', document.getElementById('language').value);
+            formData.append('api_key', document.getElementById('apiKey').value);
+            
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await response.json();
+            currentTaskId = data.task_id;
+            
+            // Theo dõi kết quả sau 2 giây
+            setTimeout(checkResult, 2000);
+        }
+        
+        async function processYoutube() {
+            const youtubeUrl = document.getElementById('youtubeUrl').value;
+            if (!youtubeUrl) {
+                alert('Vui lòng dán link YouTube');
+                return;
+            }
+            
+            const response = await fetch('/youtube', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: youtubeUrl,
+                    language: document.getElementById('language').value,
+                    api_key: document.getElementById('apiKey').value
+                })
+            });
+            const data = await response.json();
+            currentTaskId = data.task_id;
+            
+            setTimeout(checkResult, 2000);
+        }
+        
+        async function checkResult() {
+            if (!currentTaskId) return;
+            
+            // Thử tải video kết quả sau mỗi 5 giây
+            const interval = setInterval(async () => {
+                const response = await fetch(`/download/${currentTaskId}`);
+                if (response.ok) {
+                    clearInterval(interval);
+                    const videoUrl = URL.createObjectURL(await response.blob());
+                    document.getElementById('resultVideo').src = videoUrl;
+                    document.getElementById('downloadLink').href = videoUrl;
+                    document.getElementById('resultContainer').classList.remove('hidden');
+                }
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

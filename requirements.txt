@@ -1,0 +1,10 @@
+flask
+google-generativeai
+selenium
+webdriver-manager
+gtts
+yt-dlp
+ffmpeg-python
+python-dotenv
+flask-socketio
+simple-websocket
