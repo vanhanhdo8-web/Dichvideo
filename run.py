@@ -10,7 +10,7 @@ import threading
 import time
 import re
 
-# Import Faster-Whisper thay vì whisper thường
+# Import Faster-Whisper thay vì whisper thường (nhẹ hơn, xử lý video dài tốt hơn)
 from faster_whisper import WhisperModel
 
 app = Flask(__name__, static_folder='.', static_url_path='')
@@ -22,7 +22,7 @@ os.makedirs('uploads', exist_ok=True)
 os.makedirs('outputs', exist_ok=True)
 os.makedirs('temp_audio', exist_ok=True)
 
-# Load mô hình Faster-Whisper (nhẹ hơn rất nhiều)
+# Load mô hình Faster-Whisper (phiên bản nhẹ - dùng cho video dài)
 print("🔄 Đang tải mô hình Faster-Whisper (phiên bản nhẹ - dùng cho video dài)...")
 # Dùng model "tiny-int8" - chỉ ~200MB RAM, chạy được video 30-60 phút
 whisper_model = WhisperModel("tiny-int8", device="cpu", compute_type="int8")
@@ -67,7 +67,7 @@ def download_youtube_video(url, task_id):
         raise
 
 def process_video_streaming(task_id, video_path, target_language, api_key):
-    """Xử lý video theo từng đoạn - tối ưu cho video dài"""
+    """Xử lý video theo từng đoạn - tối ưu cho video dài và gửi kết quả realtime"""
     try:
         log_message(task_id, "🎬 Bắt đầu xử lý video theo luồng (tối ưu cho video dài)...")
         
@@ -129,6 +129,15 @@ def process_video_streaming(task_id, video_path, target_language, api_key):
                 full_translated_text.append(translated_text)
                 log_message(task_id, f"🔄 Đoạn {seg_idx + 1} đã dịch: \"{translated_text[:100]}...\"")
                 
+                # Gửi kết quả dịch realtime về trình duyệt
+                socketio.emit('translated_segment', {
+                    'segment_num': seg_idx + 1,
+                    'original': segment_text[:300],
+                    'translated': translated_text[:300],
+                    'start_time': start_time,
+                    'end_time': start_time + segment_duration
+                })
+                
                 # Tạo giọng đọc cho đoạn này
                 tts = gTTS(translated_text, lang=lang_code, slow=False)
                 tts.save(voice_seg_file)
@@ -153,14 +162,18 @@ def process_video_streaming(task_id, video_path, target_language, api_key):
                         pass
         
         # Ghép tất cả các đoạn đã xử lý
-        log_message(task_id, "🔗 Đang ghép các đoạn đã xử lý...")
-        concat_file = f"temp_audio/{task_id}_concat.txt"
-        with open(concat_file, 'w') as f:
-            for seg_file in processed_segments:
-                f.write(f"file '{seg_file}'\n")
-        
-        cmd = f'ffmpeg -f concat -safe 0 -i "{concat_file}" -c copy "{output_path}" -y'
-        subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if len(processed_segments) > 1:
+            log_message(task_id, "🔗 Đang ghép các đoạn đã xử lý...")
+            concat_file = f"temp_audio/{task_id}_concat.txt"
+            with open(concat_file, 'w') as f:
+                for seg_file in processed_segments:
+                    f.write(f"file '{seg_file}'\n")
+            
+            cmd = f'ffmpeg -f concat -safe 0 -i "{concat_file}" -c copy "{output_path}" -y'
+            subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        elif len(processed_segments) == 1:
+            # Chỉ có 1 đoạn, copy trực tiếp
+            subprocess.run(f'cp "{processed_segments[0]}" "{output_path}"', shell=True)
         
         # Lưu toàn bộ văn bản đã dịch
         full_text_path = f"outputs/{task_id}_translated.txt"
@@ -174,6 +187,7 @@ def process_video_streaming(task_id, video_path, target_language, api_key):
                     os.remove(seg_file)
                 except:
                     pass
+        concat_file = f"temp_audio/{task_id}_concat.txt"
         if os.path.exists(concat_file):
             os.remove(concat_file)
         
@@ -272,4 +286,5 @@ if __name__ == '__main__':
     print("📄 index.html phải nằm cùng thư mục với app.py")
     print("🍪 Đảm bảo file cookies.txt nằm cùng thư mục để tải YouTube thành công!")
     print("⚡ Đã tối ưu cho video dài: chia nhỏ thành từng đoạn 30 giây")
+    print("📡 Hỗ trợ gửi kết quả dịch realtime về trình duyệt")
     socketio.run(app, debug=True, port=5000)
